@@ -4,10 +4,10 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
-import com.m3sv.plainupnp.ShutdownNotifier
 import com.m3sv.plainupnp.common.FilterDelegate
 import com.m3sv.plainupnp.upnp.discovery.device.ObserveContentDirectoriesUseCase
 import com.m3sv.plainupnp.upnp.discovery.device.ObserveRenderersUseCase
+import com.m3sv.plainupnp.upnp.folder.FolderType
 import com.m3sv.plainupnp.upnp.manager.UpnpManager
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -20,11 +20,8 @@ class MainViewModel @Inject constructor(
     // TODO research why Dagger doesn't like Kotlin generic, use concrete implementation for now
     private val deviceDisplayMapper: DeviceDisplayMapper,
     observeContentDirectories: ObserveContentDirectoriesUseCase,
-    observeRenderersUseCase: ObserveRenderersUseCase,
-    shutdownNotifier: ShutdownNotifier
+    observeRenderersUseCase: ObserveRenderersUseCase
 ) : ViewModel() {
-
-    val shutdown: LiveData<Unit> = shutdownNotifier.flow.asLiveData()
 
     val volume = volumeManager
         .volumeFlow
@@ -45,6 +42,18 @@ class MainViewModel @Inject constructor(
     val errors = upnpManager
         .actionErrors
         .asLiveData()
+
+    val navigationState: LiveData<List<FolderType>> = upnpManager
+        .folderStructureFlow
+        .asLiveData()
+
+    val changeFolder = upnpManager
+        .folderChangeFlow
+        .asLiveData()
+
+    fun navigateTo(folderId: String, title: String) {
+        upnpManager.navigateTo(folderId, title)
+    }
 
     fun moveTo(progress: Int) {
         viewModelScope.launch {
@@ -74,5 +83,9 @@ class MainViewModel @Inject constructor(
 
     fun filterText(text: String) {
         viewModelScope.launch { filterDelegate.filter(text) }
+    }
+
+    fun navigateBack() {
+        upnpManager.navigateBack()
     }
 }

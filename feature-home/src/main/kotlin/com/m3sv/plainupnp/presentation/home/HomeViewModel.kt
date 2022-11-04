@@ -1,50 +1,80 @@
 package com.m3sv.plainupnp.presentation.home
 
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.asLiveData
-import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.*
 import com.m3sv.plainupnp.common.FilterDelegate
-import com.m3sv.plainupnp.common.Mapper
-import com.m3sv.plainupnp.upnp.Destination
+import com.m3sv.plainupnp.upnp.didl.ClingDIDLContainer
+import com.m3sv.plainupnp.upnp.didl.ClingDIDLObject
 import com.m3sv.plainupnp.upnp.manager.UpnpManager
-import com.m3sv.plainupnp.upnp.store.ContentState
-import com.m3sv.plainupnp.upnp.store.UpnpDirectory
-import com.m3sv.plainupnp.upnp.usecase.ObserveUpnpStateUseCase
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-@ExperimentalCoroutinesApi
+data class Folder(val name: String, val contents: List<ContentItem>)
+
 class HomeViewModel @Inject constructor(
     private val manager: UpnpManager,
-    private val upnpDirectoryMapper: Mapper<UpnpDirectory, Directory>,
-    filterDelegate: FilterDelegate,
-    observeUpnpStateUseCase: ObserveUpnpStateUseCase
+    private val clingContentMapper: ClingContentMapper,
+    filterDelegate: FilterDelegate
 ) : ViewModel() {
+
+    private val _currentFolderContents = MutableLiveData<Folder>()
+
+    val currentFolderContents: LiveData<Folder> = _currentFolderContents
+
+    private var folderName: String = ""
+
+    private var folders: List<ClingDIDLContainer> = listOf()
+
+    private var media: List<ClingDIDLObject> = listOf()
 
     // TODO Filtering must be done in a separate use case, refactor this
     val filterText: LiveData<String> = filterDelegate
         .state
         .asLiveData()
 
-    fun itemClick(position: Int) {
+    fun itemClick(clickPosition: Int) {
         viewModelScope.launch {
-            manager.itemClick(position)
+            when {
+                folders.isEmpty() && media.isEmpty() -> return@launch
+                folders.isEmpty() -> manager.playItem(
+                    media[clickPosition],
+                    media.listIterator(clickPosition)
+                )
+                else -> handleFolderOrMediaClick(clickPosition)
+            }
         }
     }
 
-    fun backPress() {
-        manager.navigateTo(Destination.Back, null, null)
+    private fun handleFolderOrMediaClick(clickPosition: Int) {
+        when {
+            // we're in the media zone
+            clickPosition > folders.size -> {
+                val mediaPosition = clickPosition - folders.size
+                val mediaItem = media[mediaPosition]
+                manager.playItem(mediaItem, media.listIterator(mediaPosition))
+            }
+            // we're in the folder zone
+            else -> {
+                val folder = folders[clickPosition]
+                manager.navigateTo(
+                    folderId = folder.id,
+                    title = folder.title
+                )
+            }
+        }
     }
 
-    val state: LiveData<HomeState> = observeUpnpStateUseCase
-        .execute()
-        .map { contentState ->
-            when (contentState) {
-                is ContentState.Loading -> HomeState.Loading
-                is ContentState.Success -> HomeState.Success(upnpDirectoryMapper.map(contentState.upnpDirectory))
-            }
-        }.asLiveData()
+    fun requestCurrentFolderContents() {
+        folderName = manager.getCurrentFolderName()
+        val folderContents = manager.getCurrentFolderContents()
+
+        folders = folderContents.filterIsInstance<ClingDIDLContainer>()
+        media = folderContents.filter { it !is ClingDIDLContainer }
+
+        val folder = Folder(
+            name = folderName,
+            contents = clingContentMapper.map(folderContents)
+        )
+
+        _currentFolderContents.postValue(folder)
+    }
 }
