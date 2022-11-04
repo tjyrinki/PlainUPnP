@@ -1,21 +1,55 @@
-apply from: '../scripts/android-library.gradle'
-apply from: '../scripts/cling.gradle'
+apply from: "${rootProject.projectDir}/scripts/kotlin-android-library.gradle"
+apply from: "${rootProject.projectDir}/scripts/flavors.gradle"
+
+apply plugin: 'kotlin-kapt'
+apply plugin: 'dagger.hilt.android.plugin'
+apply plugin: "com.google.protobuf"
+
+android {
+    with flavorConfig
+}
 
 dependencies {
-    implementation Dependencies.coroutines.core
-    implementation Dependencies.androidx.lifecycle.extensions
-    implementation Dependencies.androidx.material
+    playImplementation platform('com.google.firebase:firebase-bom:28.0.1')
+    playImplementation 'com.google.firebase:firebase-analytics-ktx'
+    playImplementation 'com.google.firebase:firebase-crashlytics-ktx'
+    playImplementation 'com.google.firebase:firebase-analytics-ktx'
 
-    implementation Dependencies.androidx.preference
+    implementation(libs.androidx.lifecycle.extensions)
 
-    implementation Dependencies.dagger.core
-    compileOnly Dependencies.dagger.annotation
-    kapt Dependencies.dagger.compiler
+    implementation(libs.bundles.coroutines)
+    implementation(libs.hilt.android.core)
+    implementation(libs.timber)
+    implementation(libs.androidx.appcompat)
 
-    implementation Dependencies.timber
+    implementation(libs.bundles.cling)
 
-    testImplementation Dependencies.test.junit
-    testImplementation Dependencies.test.mockito
+    implementation "androidx.datastore:datastore:1.0.0"
+    api "com.google.protobuf:protobuf-javalite:3.10.0"
 
-    implementation project(":core-resources")
+    implementation project(':resources')
+    kapt(libs.hilt.compiler)
+
+    testImplementation(libs.test.junit)
+    testImplementation(libs.test.mockito.core)
 }
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:3.10.0"
+    }
+
+    // Generates the java Protobuf-lite code for the Protobufs in this project. See
+    // https://github.com/google/protobuf-gradle-plugin#customizing-protobuf-compilation
+    // for more information.
+    generateProtoTasks {
+        all().each { task ->
+            task.builtins {
+                java {
+                    option 'lite'
+                }
+            }
+        }
+    }
+}
+

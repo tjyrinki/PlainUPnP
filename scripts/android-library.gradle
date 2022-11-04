@@ -1,41 +1,14 @@
-apply from: '../scripts/base-android-library.gradle'
-apply plugin: 'kotlin-android'
-apply plugin: 'kotlin-kapt'
+apply plugin: 'com.android.library'
 
 android {
-    sourceSets {
-        main.java.srcDirs += 'src/main/kotlin'
-        test.java.srcDirs += 'src/test/kotlin'
-        androidTest.java.srcDirs += 'src/androidTest/kotlin'
+    compileSdkVersion buildConfig.compileSdk
+    buildToolsVersion buildConfig.buildTools
+
+    defaultConfig {
+        minSdkVersion buildConfig.minSdk
+        targetSdkVersion buildConfig.targetSdk
+
+        versionCode buildConfig.version.code
+        versionName buildConfig.version.name
     }
-
-    // TODO investigate this
-    lintOptions {
-        warning 'InvalidPackage'
-    }
-
-    kotlinOptions {
-        jvmTarget = "1.8"
-    }
-
-    compileOptions {
-        coreLibraryDesugaringEnabled true
-
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-
-    buildFeatures {
-        viewBinding true
-    }
-
-    testOptions {
-        unitTests.all {
-            useJUnitPlatform()
-        }
-    }
-}
-
-dependencies {
-    coreLibraryDesugaring Dependencies.coreLibraryDesugaring
 }

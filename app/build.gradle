@@ -1,9 +1,41 @@
-apply from: "../scripts/android-application.gradle"
-apply from: "../scripts/cling.gradle"
+apply from: "${rootProject.projectDir}/scripts/flavors.gradle"
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-kapt'
-apply plugin: 'com.squareup.sqldelight'
+apply plugin: 'kotlin-parcelize'
+apply plugin: 'dagger.hilt.android.plugin'
 
 android {
+    with flavorConfig
+
+    compileSdkVersion buildConfig.compileSdk
+    buildToolsVersion buildConfig.buildTools
+
+    composeOptions {
+        kotlinCompilerExtensionVersion(libs.versions.compose.get())
+    }
+
+    defaultConfig {
+        applicationId "com.m3sv.plainupnp"
+        minSdkVersion buildConfig.minSdk
+        targetSdkVersion buildConfig.targetSdk
+
+        versionCode buildConfig.version.code
+        versionName buildConfig.version.name
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    testOptions {
+        unitTests.all {
+            useJUnitPlatform()
+        }
+    }
+
     packagingOptions {
         exclude 'META-INF/beans.xml'
     }
@@ -30,53 +62,43 @@ android {
         test.java.srcDirs += 'src/test/kotlin'
         androidTest.java.srcDirs += 'src/androidTest/kotlin'
     }
-
-    kotlinOptions {
-        jvmTarget = "1.8"
-    }
 }
 
 dependencies {
-    implementation Dependencies.androidx.appCompat
-    implementation Dependencies.androidx.material
-    implementation Dependencies.androidx.recyclerView
-    implementation Dependencies.androidx.cardView
-    implementation Dependencies.androidx.constraintLayout
-    implementation Dependencies.androidx.preference
-    implementation Dependencies.androidx.lifecycle.extensions
-    implementation Dependencies.androidx.lifecycle.liveDataKtx
-    implementation Dependencies.androidx.lifecycle.viewModelKtx
-    implementation Dependencies.androidx.lifecycle.lifecycleKtx
-    implementation Dependencies.androidx.lifecycle.liveDataKtx
-    implementation Dependencies.androidx.navigation.fragment
-    implementation Dependencies.androidx.navigation.ui
-    implementation Dependencies.coroutines.core
-    implementation Dependencies.dagger.core
-    compileOnly Dependencies.dagger.annotation
-    kapt Dependencies.dagger.compiler
-    implementation Dependencies.kotlin
-    implementation Dependencies.timber
-    implementation Dependencies.glide
-    implementation Dependencies.nanohttpd.core
-    implementation Dependencies.nanohttpd.webserver
-    implementation Dependencies.sqlDelightAndroidDriver
-
-    testImplementation Dependencies.coroutines.test
-    testImplementation Dependencies.test.junit
-    testImplementation Dependencies.test.mockito
-    testImplementation Dependencies.androidx.coreTesting
-
     implementation project(':common')
-    implementation project(':core-persistence')
-    implementation project(':core-resources')
-    implementation project(':feature-home')
-    implementation project(':feature-onboarding')
-    implementation project(':feature-settings')
-    implementation project(':shared-upnp')
+    implementation project(':resources')
+    implementation project(':feature:onboarding')
+    implementation project(':feature:selectcontentdirectory')
+    implementation project(':feature:settings')
+    implementation project(':upnp')
+
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.extensions)
+    implementation(libs.androidx.lifecycle.ktx.runtime)
+    implementation(libs.androidx.lifecycle.ktx.viewmodel)
+    implementation(libs.bundles.cling)
+    implementation(libs.bundles.compose)
+    implementation(libs.bundles.coroutines)
+    implementation(libs.bundles.nanohttpd)
+    implementation(libs.accompanist.glide)
+    implementation(libs.hilt.android.core)
+    implementation(libs.sqldelight)
+    implementation(libs.timber)
+    implementation project(path: ':compose')
+
+    playImplementation platform('com.google.firebase:firebase-bom:28.0.1')
+    playImplementation 'com.google.firebase:firebase-analytics-ktx'
+    playImplementation 'com.google.firebase:firebase-crashlytics-ktx'
+    playImplementation 'com.google.firebase:firebase-analytics-ktx'
+
+    kapt(libs.hilt.compiler)
+
+    testImplementation libs.androidx.core.testing
+    testImplementation(libs.test.junit)
+    testImplementation(libs.test.mockito.core)
 }
 
-detekt {
-    toolVersion = "1.0.0"
-    input = files("src/main/java")
-    filters = ".*/resources/.*,.*/build/.*"
+if (isPlayStoreBuild) {
+    apply plugin: 'com.google.gms.google-services'
+    apply plugin: 'com.google.firebase.crashlytics'
 }

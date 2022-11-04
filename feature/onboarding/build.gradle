@@ -1,0 +1,31 @@
+apply from: "${rootProject.projectDir}/scripts/kotlin-android-library.gradle"
+apply from: "${rootProject.projectDir}/scripts/flavors.gradle"
+apply plugin: 'kotlin-kapt'
+apply plugin: 'dagger.hilt.android.plugin'
+
+android {
+    with flavorConfig
+
+    buildFeatures {
+        compose true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion libs.versions.compose.get()
+    }
+}
+
+dependencies {
+    implementation project(':common')
+    implementation project(':compose')
+
+    implementation(libs.androidx.documentfile)
+    implementation(libs.bundles.compose)
+    implementation(libs.bundles.coroutines)
+    implementation(libs.hilt.android.core)
+
+    kapt(libs.hilt.compiler)
+
+    testImplementation(libs.test.junit)
+    testImplementation(libs.test.mockito.core)
+}

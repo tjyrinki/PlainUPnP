@@ -1,374 +1,753 @@
 package com.m3sv.plainupnp.presentation.main
 
-import android.animation.ObjectAnimator
 import android.content.Intent
-import android.os.Build
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.KeyEvent
-import android.view.Menu
-import android.view.MenuItem
-import android.view.View
-import android.view.View.ROTATION
-import android.view.inputmethod.InputMethodManager
-import androidx.appcompat.app.AlertDialog
-import androidx.core.view.isVisible
-import androidx.core.widget.addTextChangedListener
+import android.view.WindowManager
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.observe
-import androidx.navigation.NavController
-import androidx.navigation.NavDestination
-import androidx.navigation.findNavController
-import androidx.transition.TransitionManager
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.transition.MaterialFade
-import com.m3sv.plainupnp.App
+import com.google.accompanist.glide.rememberGlidePainter
 import com.m3sv.plainupnp.R
-import com.m3sv.plainupnp.common.TriggerOnceStateAction
-import com.m3sv.plainupnp.databinding.MainActivityBinding
-import com.m3sv.plainupnp.presentation.base.BaseActivity
-import com.m3sv.plainupnp.presentation.main.di.MainActivitySubComponent
-import com.m3sv.plainupnp.upnp.PlainUpnpAndroidService
-import com.m3sv.plainupnp.upnp.folder.FolderType
+import com.m3sv.plainupnp.common.ThemeManager
+import com.m3sv.plainupnp.common.util.finishApp
+import com.m3sv.plainupnp.compose.AppTheme
+import com.m3sv.plainupnp.compose.LifecycleIndicator
+import com.m3sv.plainupnp.compose.OneToolbar
+import com.m3sv.plainupnp.compose.util.isDarkTheme
+import com.m3sv.plainupnp.data.upnp.UpnpRendererState
+import com.m3sv.plainupnp.interfaces.LifecycleManager
+import com.m3sv.plainupnp.presentation.SpinnerItem
+import com.m3sv.plainupnp.presentation.settings.SettingsActivity
+import com.m3sv.plainupnp.upnp.UpnpContentRepositoryImpl.Companion.USER_DEFINED_PREFIX
+import com.m3sv.plainupnp.upnp.folder.Folder
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import kotlin.LazyThreadSafetyMode.NONE
+import org.fourthline.cling.support.model.TransportState
+import javax.inject.Inject
 
-private const val CHEVRON_ROTATION_ANGLE_KEY = "chevron_rotation_angle_key"
-private const val OPTIONS_MENU_KEY = "options_menu_key"
-private const val IS_SEARCH_CONTAINER_VISIBLE = "is_search_container_visible_key"
+typealias ComposableFactory = @Composable () -> Unit
+typealias ModifierComposableFactory = @Composable (Modifier) -> Unit
 
-class MainActivity : BaseActivity(), NavController.OnDestinationChangedListener {
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
 
-    lateinit var mainActivitySubComponent: MainActivitySubComponent
+    @Inject
+    lateinit var themeManager: ThemeManager
 
-    private lateinit var binding: MainActivityBinding
+    @Inject
+    lateinit var lifecycleManager: LifecycleManager
 
-    private lateinit var viewModel: MainViewModel
+    private val viewModel: MainViewModel by viewModels()
 
-    private lateinit var volumeIndicator: VolumeIndicator
+    private var isConnectedToRenderer: Boolean = false
 
-    private lateinit var inputMethodManager: InputMethodManager
-
-    private var bottomBarMenu = R.menu.bottom_app_bar_home_menu
-
-    private val controlsFragment: ControlsFragment by lazy(NONE) {
-        (supportFragmentManager.findFragmentById(R.id.bottom_nav_drawer) as ControlsFragment)
-    }
+    private val progressIndicatorSize = 4.dp
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        inject()
         super.onCreate(savedInstanceState)
-        inputMethodManager = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
 
-        if (savedInstanceState == null) {
-            val intent = Intent(this, PlainUpnpAndroidService::class.java).apply {
-                action = PlainUpnpAndroidService.START_SERVICE
+        setContent {
+            var selectedRenderer by rememberSaveable { mutableStateOf("Stream to") }
+            var showFilter by rememberSaveable { mutableStateOf(false) }
+            val volume by viewModel.volume.collectAsState()
+            val navigationBarState: List<Folder> by viewModel.navigation.collectAsState()
+            val folderContentsState: FolderContents by viewModel.folderContents.collectAsState()
+            val filterText by viewModel.filterText.collectAsState()
+            val loading by viewModel.loading.collectAsState()
+            val renderers by viewModel.renderers.collectAsState()
+            val upnpState by viewModel.upnpState.collectAsState()
+            val showThumbnails by viewModel.showThumbnails.collectAsState()
+            val isSelectRendererButtonExpanded: Boolean by viewModel.isSelectRendererButtonExpanded.collectAsState()
+            val isSelectRendererDialogExpanded: Boolean by viewModel.isSelectRendererDialogExpanded.collectAsState()
+            val isSettingsDialogExpanded: Boolean by viewModel.isSettingsDialogExpanded.collectAsState()
+            val currentTheme by themeManager.theme.collectAsState()
+            val showControls = upnpState !is UpnpRendererState.Empty
+            val configuration = LocalConfiguration.current
+
+            fun collapseExpandedButton() {
+                lifecycleScope.launch { viewModel.collapseSelectRendererButton() }
+                viewModel.collapseSelectRendererDialog()
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
-        }
-
-        volumeIndicator = VolumeIndicator(this)
-        binding = MainActivityBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        viewModel = getViewModel()
-        withNavController {
-            addOnDestinationChangedListener(this@MainActivity)
-        }
-
-        observeState()
-        requestReadStoragePermission()
-
-        if (savedInstanceState != null)
-            with(savedInstanceState) {
-                restoreChevronState()
-                restoreMenu()
-                restoreSearchContainerVisibility()
+            @Composable
+            fun createFloatingActionButton() {
+                RendererFloatingActionButton(
+                    isButtonExpanded = isSelectRendererButtonExpanded,
+                    isDialogExpanded = isSelectRendererDialogExpanded,
+                    selectedRenderer = selectedRenderer,
+                    renderers = renderers,
+                    onDismissDialog = { collapseExpandedButton() },
+                    onExpandButton = { lifecycleScope.launch { viewModel.expandSelectRendererButton() } },
+                    onSelectRenderer = { name -> selectedRenderer = name },
+                    onExpandDialog = { viewModel.expandSelectRendererDialog() })
             }
 
-        animateBottomDrawChanges()
-
-        binding.controlsContainer.setOnClickListener { view ->
-            hideSearchContainer(false)
-            view.postDelayed({ controlsFragment.toggle() }, 50)
-        }
-        setSupportActionBar(binding.bottomBar)
-
-        binding.searchClose.setOnClickListener {
-            hideSearchContainer(true)
-        }
-
-        binding.searchInput.addTextChangedListener { text ->
-            if (text != null) viewModel.filterText(text.toString())
-        }
-
-        lifecycleScope.launch {
-            binding.navigationStrip.clickFlow.collect { folder ->
-                navigateToFolder(folder)
-            }
-        }
-    }
-
-    // TODO remove this when geniuses from Google figure out how to deal with cyclic navigation and popBackStack
-    private fun navigateToFolder(folder: FolderType) {
-        if (folder is FolderType.Root)
-            viewModel.navigateTo(folder.folderId, folder.title)
-        else
-            handleBackPressed()
-    }
-
-    private fun hideSearchContainer(animate: Boolean) {
-        if (animate) {
-            val animationDuration = 150L
-            animateVisibilityChange(animationDuration)
-        }
-
-        with(binding) {
-            val currentFocus = currentFocus
-            if (inputMethodManager.isActive(searchInput) && currentFocus != null) {
-                inputMethodManager.hideSoftInputFromWindow(currentFocus.windowToken, 0)
-            }
-            searchInput.clearFocus()
-            searchContainer.visibility = View.INVISIBLE
-            searchInput.setText("")
-        }
-    }
-
-    private fun observeState() {
-        viewModel
-            .volume
-            .observe(this) { volume: Int ->
-                volumeIndicator.volume = volume
-            }
-
-        viewModel
-            .errors
-            .observe(this) { consumable ->
-                consumable.consume { value ->
-                    MaterialAlertDialogBuilder(this)
-                        .setMessage(value)
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
-                }
-            }
-
-        viewModel
-            .changeFolder
-            .observe(this) { consumable ->
-                consumable.consume { folderType ->
-                    when (folderType) {
-                        is FolderType.Root -> navigateToRootFolder()
-                        is FolderType.SubFolder -> navigateToSubfolder()
+            val filter: ComposableFactory = {
+                AnimatedVisibility(visible = showFilter) {
+                    Filter(
+                        initialValue = filterText,
+                        onValueChange = { viewModel.filterInput(it) },
+                    ) {
+                        showFilter = false
+                        viewModel.clearFilterText()
                     }
                 }
             }
 
-        viewModel
-            .navigationState
-            .observe(this, binding.navigationStrip::replaceItems)
-    }
+            val folderContents: ModifierComposableFactory = { modifier ->
+                Folders(
+                    contents = folderContentsState,
+                    showThumbnails = showThumbnails,
+                    modifier = modifier
+                )
+            }
 
-    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean = when (keyCode) {
-        KeyEvent.KEYCODE_DEL -> {
-            handleBackPressed()
-            true
-        }
-        else -> super.onKeyUp(keyCode, event)
-    }
+            val navigationBar: ModifierComposableFactory = { modifier ->
+                NavigationBar(
+                    folders = navigationBarState,
+                    modifier = modifier
+                )
+            }
 
-    private fun navigateToSubfolder() {
-        withNavController {
-            navigate(R.id.to_sub)
-        }
-    }
+            val settings: @Composable RowScope.() -> Unit = {
+                SettingsMenu(
+                    isExpanded = isSettingsDialogExpanded,
+                    onExpandDialog = viewModel::expandSettingsDialog,
+                    onDismissDialog = viewModel::collapseSettingsDialog,
+                    onSettingsClick = { openSettings() },
+                    onFilterClick = {
+                        showFilter = !showFilter
 
-    private fun navigateToRootFolder() {
-        withNavController {
-            navigate(R.id.to_root)
-        }
-    }
+                        if (!showFilter) {
+                            viewModel.clearFilterText()
+                        }
+                    })
+            }
 
-    override fun onDestinationChanged(
-        controller: NavController,
-        destination: NavDestination,
-        arguments: Bundle?
-    ) {
-        when (destination.id) {
-            R.id.root_fragment,
-            R.id.sub_folder_fragment -> contentDestination()
-            R.id.settings_fragment -> settingsDestination()
-        }
-    }
+            AppTheme(currentTheme.isDarkTheme()) {
+                Surface {
+                    Box {
+                        when (configuration.orientation) {
+                            Configuration.ORIENTATION_LANDSCAPE -> {
+                                window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN)
+                                Landscape(
+                                    upnpState = upnpState,
+                                    loading = loading,
+                                    showControls = showControls,
+                                    floatingActionButton = { createFloatingActionButton() },
+                                    filter = filter,
+                                    toolbar = {
+                                        Toolbar(settings) {
+                                            navigationBar(Modifier)
+                                        }
+                                    },
+                                    folderContents = folderContents
+                                )
+                            }
+                            else -> {
+                                window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+                                Portrait(
+                                    upnpState = upnpState,
+                                    folderContents = folderContents,
+                                    loading = loading,
+                                    showControls = showControls,
+                                    floatingActionButton = { createFloatingActionButton() },
+                                    filter = filter,
+                                    navigationBar = navigationBar,
+                                    toolbar = {
+                                        Toolbar(settings)
+                                    }
+                                )
+                            }
+                        }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(bottomBarMenu, menu)
-        return true
-    }
+                        Volume(
+                            volumeUpdate = volume,
+                            modifier = Modifier.align(Alignment.CenterStart)
+                        )
+                    }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        when (item.itemId) {
-            R.id.menu_settings -> showSettings()
-            R.id.menu_search -> showSearch()
-        }
-        return true
-    }
+                    val lifecycleState by lifecycleManager.lifecycleState.collectAsState()
 
-    private fun showSearch() {
-        controlsFragment.close()
-        val animationDuration = 150L
-        animateVisibilityChange(animationDuration)
-        with(binding.searchContainer) {
-            isVisible = true
-            postDelayed({
-                if (binding.searchInput.requestFocus()) {
-                    inputMethodManager.showSoftInput(binding.searchInput, 0)
+                    LifecycleIndicator(lifecycleState = lifecycleState, ::finishApp)
                 }
-            }, animationDuration)
+            }
+        }
+
+        lifecycleScope.launchWhenCreated {
+            viewModel.finishActivityFlow.collect { finish() }
+        }
+
+        lifecycleScope.launchWhenCreated {
+            viewModel.isConnectedToRenderer.collect { isConnectedToRenderer = it }
         }
     }
 
-    private fun animateVisibilityChange(animationDuration: Long) {
-        val materialFade = MaterialFade().apply {
-            duration = animationDuration
-        }
-        TransitionManager.beginDelayedTransition(binding.root, materialFade)
-    }
+    @Composable
+    private fun Volume(volumeUpdate: VolumeUpdate, modifier: Modifier = Modifier) {
+        AnimatedVisibility(
+            modifier = modifier,
+            visible = volumeUpdate is VolumeUpdate.Show
+        ) {
+            Card(
+                shape = RoundedCornerShape(
+                    topEnd = 32.dp,
+                    bottomEnd = 32.dp
+                ),
+                elevation = 8.dp
+            ) {
+                Surface(modifier = Modifier.padding(16.dp)) {
+                    Row {
+                        val volume = volumeUpdate.volume
+                        val icon = when {
+                            volume < 5 -> R.drawable.ic_volume_mute
+                            volume < 35 -> R.drawable.ic_volume_down
+                            volume >= 35 -> R.drawable.ic_volume_up
+                            else -> R.drawable.ic_volume_up
+                        }
 
-    private fun showSettings() {
-        hideSearchContainer(false)
-        controlsFragment.close()
-        withNavController {
-            navigate(R.id.to_settings)
-        }
-    }
+                        Icon(
+                            painter = painterResource(id = icon),
+                            contentDescription = null
+                        )
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putFloat(CHEVRON_ROTATION_ANGLE_KEY, binding.bottomAppBarChevron.rotation)
-        outState.putInt(OPTIONS_MENU_KEY, bottomBarMenu)
-        outState.putBoolean(IS_SEARCH_CONTAINER_VISIBLE, binding.searchContainer.isVisible)
-    }
-
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean = when (keyCode) {
-        KeyEvent.KEYCODE_VOLUME_UP -> {
-            viewModel.playerButtonClick(PlayerButton.RAISE_VOLUME)
-            true
-        }
-
-        KeyEvent.KEYCODE_VOLUME_DOWN -> {
-            viewModel.playerButtonClick(PlayerButton.LOWER_VOLUME)
-            true
-        }
-        else -> super.onKeyDown(keyCode, event)
-    }
-
-    private fun animateBottomDrawChanges() {
-        with(controlsFragment) {
-            addOnStateChangedAction(TriggerOnceStateAction(this@MainActivity::animateChevronArrow))
-        }
-    }
-
-    private val arrowUpAnimator by lazy(mode = NONE) {
-        ObjectAnimator
-            .ofFloat(binding.bottomAppBarChevron, ROTATION, 0f)
-            .apply { duration = 200 }
-    }
-
-    private val arrowDownAnimator by lazy(mode = NONE) {
-        ObjectAnimator
-            .ofFloat(binding.bottomAppBarChevron, ROTATION, 180f)
-            .apply { duration = 200 }
-    }
-
-    private fun animateChevronArrow(isHidden: Boolean) {
-        val animator = if (isHidden) {
-            arrowUpAnimator
-        } else {
-            arrowDownAnimator
-        }
-
-        animator.start()
-    }
-
-    private fun inject() {
-        mainActivitySubComponent = (applicationContext as App)
-            .appComponent
-            .mainSubcomponent()
-            .create()
-            .also { component -> component.inject(this) }
-    }
-
-    private fun contentDestination() {
-        with(binding) {
-            bottomBar.performShow()
-            with(navigationStrip) {
-                clearAnimation()
-                animate().alpha(1f)
+                        Text("Volume", Modifier.padding(horizontal = 8.dp))
+                        Text("$volume", modifier = Modifier.defaultMinSize(minWidth = 24.dp))
+                    }
+                }
             }
         }
     }
 
-    private fun settingsDestination() {
-        with(binding) {
-            bottomBar.performHide()
-            with(navigationStrip) {
-                clearAnimation()
-                animate().alpha(0f)
+    @Composable
+    private fun Portrait(
+        upnpState: UpnpRendererState,
+        showControls: Boolean,
+        loading: Boolean,
+        navigationBar: ModifierComposableFactory,
+        folderContents: ModifierComposableFactory,
+        toolbar: @Composable ColumnScope.() -> Unit,
+        floatingActionButton: @Composable BoxScope.() -> Unit,
+        filter: ComposableFactory,
+    ) {
+        Column {
+            toolbar()
+
+            navigationBar(Modifier.padding(start = 16.dp))
+            LoadingIndicator(loading)
+
+            Row(modifier = Modifier.weight(1f)) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    folderContents(Modifier)
+
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = !showControls,
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                    ) {
+                        floatingActionButton()
+                    }
+                }
+            }
+
+            filter()
+
+            AnimatedVisibility(visible = showControls) {
+                Controls(upnpState, 16.dp, 16.dp)
             }
         }
     }
 
-    private fun Bundle.restoreChevronState() {
-        binding.bottomAppBarChevron.rotation = getFloat(CHEVRON_ROTATION_ANGLE_KEY, 0f)
+    @Composable
+    private fun Landscape(
+        upnpState: UpnpRendererState,
+        showControls: Boolean,
+        loading: Boolean,
+        toolbar: @Composable ColumnScope.() -> Unit,
+        folderContents: ModifierComposableFactory,
+        floatingActionButton: ComposableFactory,
+        filter: ComposableFactory,
+    ) {
+        Column {
+            toolbar()
+            LoadingIndicator(loading)
+
+            val transition = updateTransition(targetState = showControls, label = "")
+            val folderWeight by transition.animateFloat(label = "") { showControls ->
+                if (showControls)
+                    1f
+                else
+                    10f
+            }
+
+            val controlsWeight by transition.animateFloat(label = "") { showControls ->
+                if (showControls)
+                    1f
+                else
+                    3f
+            }
+
+            Row(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.weight(folderWeight)) {
+                    folderContents(Modifier.weight(1f))
+                    filter()
+                }
+
+                Crossfade(
+                    targetState = showControls,
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .weight(controlsWeight)
+                ) { showControls ->
+                    if (showControls) {
+                        Controls(upnpState, 0.dp, 8.dp)
+                    } else {
+                        Row(modifier = Modifier.fillMaxHeight(), verticalAlignment = Alignment.Bottom) {
+                            Spacer(modifier = Modifier.weight(1f))
+                            floatingActionButton()
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    private fun Bundle.restoreMenu() {
-        bottomBarMenu = getInt(OPTIONS_MENU_KEY, R.menu.bottom_app_bar_home_menu)
+    @Composable
+    private fun LoadingIndicator(loading: Boolean) {
+        Box(modifier = Modifier.height(progressIndicatorSize)) {
+            AnimatedVisibility(visible = loading) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .height(progressIndicatorSize)
+                        .fillMaxWidth()
+                )
+            }
+        }
     }
 
-    private fun Bundle.restoreSearchContainerVisibility() {
-        val isSearchContainerVisible = getBoolean(IS_SEARCH_CONTAINER_VISIBLE, false)
-        binding
-            .searchContainer
-            .visibility = if (isSearchContainerVisible) View.VISIBLE else View.INVISIBLE
+    @Composable
+    private fun Folders(
+        contents: FolderContents,
+        showThumbnails: Boolean,
+        modifier: Modifier = Modifier
+    ) {
+        when (contents) {
+            is FolderContents.Contents -> {
+                if (contents.items.isEmpty())
+                    Text(
+                        text = "Oops, nothing to see here", modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 24.dp)
+                            .padding(top = 8.dp)
+                    )
+
+                LazyColumn(modifier = modifier) {
+                    items(contents.items) { item ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.itemClick(item.id) }
+                        ) {
+                            Spacer(modifier = Modifier.padding(8.dp))
+                            val imageModifier = Modifier.size(32.dp)
+                            when (item.type) {
+                                ItemType.CONTAINER -> {
+                                    Image(
+                                        painterResource(id = R.drawable.ic_folder_24dp),
+                                        contentDescription = null,
+                                        modifier = imageModifier
+                                    )
+                                }
+                                ItemType.AUDIO -> Image(
+                                    painterResource(id = R.drawable.ic_music),
+                                    contentDescription = null,
+                                    imageModifier
+                                )
+                                ItemType.IMAGE -> Image(
+                                    if (showThumbnails) {
+                                        rememberGlidePainter(item.uri)
+                                    } else {
+                                        painterResource(id = R.drawable.ic_image)
+                                    },
+                                    contentDescription = null,
+                                    imageModifier
+                                )
+                                ItemType.VIDEO -> Image(
+                                    if (showThumbnails) {
+                                        rememberGlidePainter(item.uri)
+                                    } else {
+                                        painterResource(id = R.drawable.ic_video)
+                                    },
+                                    contentDescription = null,
+                                    imageModifier
+                                )
+                                ItemType.MISC -> {
+                                    // TODO Handle misc type
+                                }
+                            }
+
+                            val title = if (item.type == ItemType.CONTAINER) {
+                                item.title.replace(USER_DEFINED_PREFIX, "")
+                            } else {
+                                item.title
+                            }
+
+                            Text(
+                                text = title,
+                                maxLines = 1,
+                                modifier = Modifier.padding(8.dp),
+                                style = MaterialTheme.typography.subtitle1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+            is FolderContents.Empty -> {
+            }
+        }
+    }
+
+    @Composable
+    private fun NavigationBar(folders: List<Folder>, modifier: Modifier = Modifier) {
+        LazyRow(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
+            itemsIndexed(folders) { index, item ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable {
+                        viewModel.navigateTo(item)
+                    }
+                ) {
+                    val labelColor: Color
+                    val arrowColor: Color
+
+                    if (index == folders.size - 1) {
+                        labelColor = MaterialTheme.colors.primary
+                        arrowColor = MaterialTheme.colors.primary
+                    } else {
+                        labelColor = Color.Unspecified
+                        arrowColor = MaterialTheme.colors.onSurface
+                    }
+
+                    if (index == 0) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_folder_home),
+                            contentDescription = null,
+                            modifier = Modifier.padding(start = 4.dp, end = 4.dp)
+                        )
+                    } else {
+                        Image(
+                            painterResource(id = R.drawable.ic_next_folder),
+                            null,
+                            colorFilter = ColorFilter.tint(arrowColor)
+                        )
+                    }
+
+                    Box {
+                        Text(
+                            text = item.folderModel.title,
+                            style = MaterialTheme.typography.caption,
+                            fontWeight = FontWeight.Bold,
+                            color = labelColor,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun Controls(upnpState: UpnpRendererState, elevation: Dp, verticalPadding: Dp = 0.dp) {
+        val defaultState: UpnpRendererState.Default? = upnpState as? UpnpRendererState.Default
+
+        Surface(
+            shape = RoundedCornerShape(topStart = AppTheme.cornerRadius, topEnd = AppTheme.cornerRadius),
+            elevation = elevation,
+        ) {
+            Row {
+                Column {
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = 16.dp,
+                                vertical = verticalPadding
+                            )
+                    ) {
+                        Text(defaultState?.title ?: "")
+
+                        Surface {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_close),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clickable {
+                                        viewModel.playerButtonClick(PlayerButton.STOP)
+                                    }
+                            )
+                        }
+
+                    }
+
+                    Row {
+                        Slider(value = (defaultState?.elapsedPercent ?: 0).toFloat() / 100, onValueChange = {
+                            viewModel.moveTo((it * 100).toInt())
+                        })
+                    }
+
+                    Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
+                        Text(defaultState?.position ?: "00:00")
+                        Text("/")
+                        Text(defaultState?.duration ?: "00:00")
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        val iconSize = Modifier.size(32.dp)
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_skip_previous),
+                            contentDescription = null,
+                            modifier = iconSize.clickable {
+                                viewModel.playerButtonClick(PlayerButton.PREVIOUS)
+                            }
+                        )
+                        Image(
+                            painter = painterResource(id = defaultState?.icon ?: R.drawable.ic_play_arrow),
+                            contentDescription = null,
+                            modifier = iconSize.clickable {
+                                viewModel.playerButtonClick(PlayerButton.PLAY)
+                            }
+                        )
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_skip_next),
+                            contentDescription = null,
+                            modifier = iconSize.clickable {
+                                viewModel.playerButtonClick(PlayerButton.NEXT)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun RendererFloatingActionButton(
+        isButtonExpanded: Boolean,
+        isDialogExpanded: Boolean,
+        selectedRenderer: String,
+        renderers: List<SpinnerItem>,
+        onDismissDialog: () -> Unit,
+        onExpandButton: () -> Unit,
+        onSelectRenderer: (String) -> Unit,
+        onExpandDialog: () -> Unit,
+    ) {
+        Box {
+            FloatingActionButton(onClick = {
+                if (isButtonExpanded)
+                    onExpandDialog()
+                else {
+                    onExpandButton()
+                }
+            }, modifier = Modifier.padding(16.dp)) {
+                Row(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Icon(painterResource(id = R.drawable.ic_cast), null)
+                    // Toggle the visibility of the content with animation.
+                    AnimatedVisibility(visible = isButtonExpanded) {
+                        Text(
+                            text = selectedRenderer,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 8.dp, top = 3.dp)
+                        )
+                    }
+                }
+            }
+
+            DropdownMenu(
+                expanded = isDialogExpanded,
+                onDismissRequest = onDismissDialog,
+                offset = DpOffset((16).dp, (0).dp),
+            ) {
+                for (item in renderers) {
+                    DropdownMenuItem(onClick = {
+                        onDismissDialog()
+                        onSelectRenderer(item.name)
+
+                        viewModel.selectRenderer(item)
+                    }) {
+                        Text(text = item.name)
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun Toolbar(
+        settingsMenu: @Composable RowScope.() -> Unit,
+        content: @Composable RowScope.() -> Unit = {}
+    ) {
+        Box {
+            OneToolbar(onBackClick = { onBackPressed() }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    content()
+                    Spacer(modifier = Modifier.weight(1f))
+                    settingsMenu()
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun SettingsMenu(
+        isExpanded: Boolean,
+        onExpandDialog: () -> Unit,
+        onDismissDialog: () -> Unit,
+        onSettingsClick: () -> Unit,
+        onFilterClick: () -> Unit
+    ) {
+        IconButton(onClick = onExpandDialog) {
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = null,
+                tint = LocalContentColor.current.copy(alpha = 0.75f)
+            )
+        }
+
+        DropdownMenu(
+            expanded = isExpanded,
+            onDismissRequest = onDismissDialog,
+            offset = DpOffset((-100).dp, 0.dp),
+        ) {
+            DropdownMenuItem(
+                onClick = {
+                    onDismissDialog()
+                    onFilterClick()
+                }
+            ) {
+                Text(stringResource(id = R.string.search))
+            }
+
+            DropdownMenuItem(
+                onClick = {
+                    onDismissDialog()
+                    onSettingsClick()
+                }
+            ) {
+                Text(stringResource(R.string.title_feature_settings))
+            }
+        }
+    }
+
+    @Composable
+    private fun Filter(
+        initialValue: String,
+        onValueChange: (String) -> Unit,
+        onCloseClick: () -> Unit
+    ) {
+        OutlinedTextField(
+            value = initialValue,
+            onValueChange = onValueChange,
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp)
+                .fillMaxWidth(),
+            trailingIcon = {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_close),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clickable {
+                            onCloseClick()
+                        }
+                )
+            }
+        )
+    }
+
+    private fun openSettings() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+        }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        return if (isConnectedToRenderer) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP -> {
+                    viewModel.playerButtonClick(PlayerButton.RAISE_VOLUME)
+                    true
+                }
+
+                KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                    viewModel.playerButtonClick(PlayerButton.LOWER_VOLUME)
+                    true
+                }
+                else -> super.onKeyDown(keyCode, event)
+            }
+        } else super.onKeyDown(keyCode, event)
     }
 
     override fun onBackPressed() {
-        handleBackPressed()
+        viewModel.navigateBack()
     }
 
-    private fun handleBackPressed() {
-        withNavController {
-            when (currentDestination?.id) {
-                R.id.onboarding_fragment,
-                R.id.root_fragment -> showExitConfirmationDialog()
-                R.id.sub_folder_fragment -> {
-                    viewModel.navigateBack()
-                    super.onBackPressed()
-                }
-                else -> super.onBackPressed()
-
-            }
+    private val UpnpRendererState.Default.icon: Int
+        inline get() = when (state) {
+            TransportState.PLAYING -> R.drawable.ic_pause
+            TransportState.STOPPED,
+            TransportState.TRANSITIONING,
+            TransportState.PAUSED_PLAYBACK,
+            TransportState.PAUSED_RECORDING,
+            TransportState.RECORDING,
+            TransportState.NO_MEDIA_PRESENT,
+            TransportState.CUSTOM,
+            -> R.drawable.ic_play_arrow
         }
-    }
-
-    private fun showExitConfirmationDialog() {
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.dialog_exit_title))
-            .setMessage(getString(R.string.dialog_exit_body))
-            .setPositiveButton(getString(R.string.exit)) { _, _ ->
-                finishAndRemoveTask()
-            }
-            .setNegativeButton(getString(R.string.cancel)) { _, _ -> }
-            .show()
-    }
-
-    private fun withNavController(block: NavController.() -> Unit) {
-        block(findNavController(R.id.nav_host_container))
-    }
 }

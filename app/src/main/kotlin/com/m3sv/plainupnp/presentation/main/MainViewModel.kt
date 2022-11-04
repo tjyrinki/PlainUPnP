@@ -1,58 +1,174 @@
 package com.m3sv.plainupnp.presentation.main
 
-import androidx.lifecycle.LiveData
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
-import com.m3sv.plainupnp.common.FilterDelegate
-import com.m3sv.plainupnp.upnp.discovery.device.ObserveContentDirectoriesUseCase
-import com.m3sv.plainupnp.upnp.discovery.device.ObserveRenderersUseCase
-import com.m3sv.plainupnp.upnp.folder.FolderType
+import com.m3sv.plainupnp.common.preferences.PreferencesRepository
+import com.m3sv.plainupnp.common.util.pass
+import com.m3sv.plainupnp.data.upnp.UpnpRendererState
+import com.m3sv.plainupnp.presentation.SpinnerItem
+import com.m3sv.plainupnp.upnp.folder.Folder
+import com.m3sv.plainupnp.upnp.manager.Result
 import com.m3sv.plainupnp.upnp.manager.UpnpManager
-import kotlinx.coroutines.flow.map
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+sealed class VolumeUpdate(val volume: Int) {
+    class Show(volume: Int) : VolumeUpdate(volume)
+    class Hide(volume: Int) : VolumeUpdate(volume)
+}
+
+@HiltViewModel
 class MainViewModel @Inject constructor(
+    preferencesRepository: PreferencesRepository,
     private val upnpManager: UpnpManager,
     private val volumeManager: BufferedVolumeManager,
-    private val filterDelegate: FilterDelegate,
-    // TODO research why Dagger doesn't like Kotlin generic, use concrete implementation for now
-    private val deviceDisplayMapper: DeviceDisplayMapper,
-    observeContentDirectories: ObserveContentDirectoriesUseCase,
-    observeRenderersUseCase: ObserveRenderersUseCase
 ) : ViewModel() {
 
-    val volume = volumeManager
+    val isConnectedToRenderer: Flow<Boolean> = upnpManager.isConnectedToRenderer
+
+    val volume: StateFlow<VolumeUpdate> = volumeManager
         .volumeFlow
-        .asLiveData()
+        .map { volume -> VolumeUpdate.Show(volume) }
+        .transformLatest { volumeUpdate ->
+            emit(volumeUpdate)
+            delay(HIDE_VOLUME_INDICATOR_DELAY)
+            emit(VolumeUpdate.Hide(volumeUpdate.volume))
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Lazily,
+            initialValue = VolumeUpdate.Hide(-1)
+        )
 
-    val upnpState = upnpManager
+    private val _loading: MutableStateFlow<Boolean> = MutableStateFlow(false)
+
+    val loading: StateFlow<Boolean> = _loading
+
+    private val _filterText: MutableStateFlow<String> = MutableStateFlow("")
+
+    val filterText: StateFlow<String> = _filterText
+
+    val navigation: StateFlow<List<Folder>> = upnpManager
+        .navigationStack
+        .filterNot { it.isEmpty() }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Lazily,
+            initialValue = listOf()
+        )
+
+    val folderContents: StateFlow<FolderContents> = combine(
+        navigation.filterNot { it.isEmpty() },
+        filterText
+    ) { folders, filterText ->
+        val newContents = folders
+            .last()
+            .folderModel
+            .contents
+            .filter { it.title.contains(filterText, ignoreCase = true) }
+            .map { clingObject ->
+                ItemViewModel(
+                    id = clingObject.id,
+                    title = clingObject.title,
+                    type = clingObject.toItemType(),
+                    uri = clingObject.uri
+                )
+            }
+
+        FolderContents.Contents(newContents)
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            FolderContents.Empty
+        )
+
+    val upnpState: StateFlow<UpnpRendererState> = upnpManager
         .upnpRendererState
-        .asLiveData()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, UpnpRendererState.Empty)
 
-    val renderers = observeRenderersUseCase()
-        .map { bundle -> deviceDisplayMapper.map(bundle) }
-        .asLiveData()
+    val renderers: StateFlow<List<SpinnerItem>> = upnpManager
+        .renderers
+        .map { devices -> devices.map { SpinnerItem(it.upnpDevice.friendlyName, it) } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, listOf())
 
-    val contentDirectories = observeContentDirectories()
-        .map { bundle -> deviceDisplayMapper.map(bundle) }
-        .asLiveData()
+    val finishActivityFlow: Flow<Unit> = upnpManager
+        .navigationStack
+        .filter { it.isEmpty() }
+        .map { }
 
-    val errors = upnpManager
-        .actionErrors
-        .asLiveData()
+    val showThumbnails: StateFlow<Boolean> = preferencesRepository
+        .preferences
+        .map { it.enableThumbnails }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Lazily,
+            initialValue = false
+        )
 
-    val navigationState: LiveData<List<FolderType>> = upnpManager
-        .folderStructureFlow
-        .asLiveData()
+    private val _isSelectRendererButtonExpanded: MutableSharedFlow<Boolean> = MutableSharedFlow(1)
 
-    val changeFolder = upnpManager
-        .folderChangeFlow
-        .asLiveData()
+    val isSelectRendererButtonExpanded: StateFlow<Boolean> = _isSelectRendererButtonExpanded
+        .transformLatest { visible ->
+            emit(visible)
+            if (visible) {
+                delay(5000)
+                emit(false)
+                collapseSelectRendererDialog()
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    fun navigateTo(folderId: String, title: String) {
-        upnpManager.navigateTo(folderId, title)
+    private val _isSelectRendererDialogExpanded = MutableStateFlow(false)
+
+    val isSelectRendererDialogExpanded: StateFlow<Boolean> = _isSelectRendererDialogExpanded
+
+    private val _isSettingsDialogExpanded = MutableStateFlow(false)
+
+    val isSettingsDialogExpanded: StateFlow<Boolean> = _isSettingsDialogExpanded
+
+    fun itemClick(id: String) {
+        viewModelScope.launch {
+            _loading.value = true
+
+            when (upnpManager.itemClick(id)) {
+                Result.Error.RENDERER_NOT_SELECTED -> _isSelectRendererButtonExpanded.emit(true)
+                Result.Success,
+                Result.Error.AV_SERVICE_NOT_FOUND,
+                Result.Error.GENERIC -> pass
+            }
+
+            _loading.value = false
+        }
+    }
+
+    suspend fun expandSelectRendererButton() {
+        _isSelectRendererButtonExpanded.emit(true)
+    }
+
+    suspend fun collapseSelectRendererButton() {
+        _isSelectRendererButtonExpanded.emit(false)
+    }
+
+    fun expandSelectRendererDialog() {
+        _isSelectRendererDialogExpanded.value = true
+    }
+
+    fun collapseSelectRendererDialog() {
+        _isSelectRendererDialogExpanded.value = false
+    }
+
+    fun expandSettingsDialog() {
+        _isSettingsDialogExpanded.value = true
+    }
+
+    fun collapseSettingsDialog() {
+        _isSettingsDialogExpanded.value = false
     }
 
     fun moveTo(progress: Int) {
@@ -61,12 +177,8 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun selectContentDirectory(position: Int) {
-        upnpManager.selectContentDirectory(position)
-    }
-
-    fun selectRenderer(position: Int) {
-        upnpManager.selectRenderer(position)
+    fun selectRenderer(position: SpinnerItem) {
+        viewModelScope.launch { upnpManager.selectRenderer(position) }
     }
 
     fun playerButtonClick(button: PlayerButton) {
@@ -77,15 +189,30 @@ class MainViewModel @Inject constructor(
                 PlayerButton.NEXT -> upnpManager.playNext()
                 PlayerButton.RAISE_VOLUME -> volumeManager.raiseVolume()
                 PlayerButton.LOWER_VOLUME -> volumeManager.lowerVolume()
+                PlayerButton.STOP -> upnpManager.stopPlayback()
             }
         }
     }
 
-    fun filterText(text: String) {
-        viewModelScope.launch { filterDelegate.filter(text) }
+    fun navigateBack() {
+        viewModelScope.launch { upnpManager.navigateBack() }
     }
 
-    fun navigateBack() {
-        upnpManager.navigateBack()
+    fun navigateTo(folder: Folder) {
+        viewModelScope.launch { upnpManager.navigateTo(folder) }
+    }
+
+    fun filterInput(text: String) {
+        viewModelScope.launch {
+            _filterText.emit(text)
+        }
+    }
+
+    fun clearFilterText() {
+        filterInput("")
+    }
+
+    companion object {
+        private const val HIDE_VOLUME_INDICATOR_DELAY: Long = 2500
     }
 }

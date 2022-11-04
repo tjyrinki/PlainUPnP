@@ -31,4 +31,4 @@
 
 -keepattributes Annotation, InnerClasses, Signature
 
--keepnames class com.m3sv.plainupnp.presentation.main.ControlsFragment
+-keep class com.m3sv.plainupnp.common.preferences.** {*;}

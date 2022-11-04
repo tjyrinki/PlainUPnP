@@ -1,0 +1,34 @@
+apply from: "${rootProject.projectDir}/scripts/kotlin-android-library.gradle"
+apply from: "${rootProject.projectDir}/scripts/flavors.gradle"
+
+apply plugin: 'kotlin-kapt'
+apply plugin: 'dagger.hilt.android.plugin'
+
+
+android {
+    with flavorConfig
+
+    buildFeatures {
+        compose true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion libs.versions.compose.get()
+    }
+}
+
+dependencies {
+    implementation project(':common')
+    implementation project(':upnp')
+    implementation project(':compose')
+
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.extensions)
+    implementation(libs.androidx.lifecycle.ktx.runtime)
+    implementation(libs.bundles.cling)
+    implementation(libs.bundles.compose)
+    implementation(libs.bundles.nanohttpd)
+    implementation(libs.hilt.android.core)
+
+    kapt(libs.hilt.compiler)
+}

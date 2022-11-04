@@ -19,7 +19,7 @@ platform :android do
 
   desc "Runs all the tests"
   lane :test do
-    gradle(task: "test")
+    gradle(task: "testOssDebugUnitTest")
   end
 
   lane :playstore do
@@ -28,7 +28,9 @@ platform :android do
       task: 'bundle',
       build_type: 'Release'
     )
-    upload_to_play_store()
+    upload_to_play_store(
+        rollout: '0.5'
+    )
   end
 
 

@@ -2,13 +2,31 @@ package com.m3sv.plainupnp.presentation.splash
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
-import com.m3sv.plainupnp.presentation.main.MainActivity
+import androidx.activity.ComponentActivity
+import com.m3sv.plainupnp.presentation.onboarding.OnboardingManager
+import com.m3sv.plainupnp.presentation.onboarding.activity.OnboardingActivity
+import com.m3sv.selectcontentdirectory.SelectContentDirectoryActivity
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
-class SplashActivity : AppCompatActivity() {
+@AndroidEntryPoint
+class SplashActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var onboardingManager: OnboardingManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        startActivity(Intent(this, MainActivity::class.java))
+        if (onboardingManager.isOnboardingCompleted) {
+            startActivity(Intent(this, SelectContentDirectoryActivity::class.java))
+        } else {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+        }
+
         finish()
+    }
+
+    override fun onBackPressed() {
+        finishAndRemoveTask()
     }
 }

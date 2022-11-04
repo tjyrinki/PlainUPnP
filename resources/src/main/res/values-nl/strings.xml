@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="version">Versie</string>
+    <string name="set_theme_label">Thema instellen</string>
+    <string name="share_images">Beelden inschakelen</string>
+    <string name="share_music">Muziek inschakelen</string>
+    <string name="share_videos">Videos inschakelen</string>
+    <string name="search">Filter…</string>
+    <string name="play_locally">Lokaal spelen</string>
+    <string name="rate">Geniet u van het gebruik van Plain UPnP?</string>
+    <string name="open_play_store">Klik hier om een recensie te geven over Google Play</string>
+    <string name="github_link_title">Broncode op Github</string>
+    <string name="all">Alle</string>
+    <string name="album">Album</string>
+    <string name="artist">Kunstenaar</string>
+    <string name="videos">Videos</string>
+    <string name="images">Beelden</string>
+    <string name="audio">Muziek</string>
+    <string name="open_privacy_policy">Open privacybeleid</string>
+    <string name="privacy_policy">Privacybeleid</string>
+    <string name="enable_thumbnails">Miniaturen inschakelen</string>
+    <string name="notification_body">PlainUPnP Server werkt</string>
+    <string name="notification_title">PlainUPnP Server</string>
+    <string name="shut_down">Dichtgaan</string>
+    <string name="contact_us_title">Contacteer ons</string>
+    <string name="contact_us_body">Functie ontbreekt? Stuur ons een e-mail!</string>
+    <string name="dark_theme_label">Donker</string>
+    <string name="light_theme_label">Licht</string>
+    <string name="system_theme_label">Systeemgebaseerd</string>
+    <string name="browse_failed">Bladeren door inhoud is mislukt. Probeer het apparaat opnieuw te selecteren. Als dat niet helpt, herstart apparaat en app.</string>
+    <string name="by_folder">Per map</string>
+</resources>

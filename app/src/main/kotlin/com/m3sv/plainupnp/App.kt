@@ -1,53 +1,61 @@
 package com.m3sv.plainupnp
 
 import android.app.Application
+import android.content.Context
+import android.content.Intent
 import android.os.StrictMode
-import com.m3sv.plainupnp.common.util.generateUdn
-import com.m3sv.plainupnp.common.util.updateTheme
-import com.m3sv.plainupnp.di.AppComponent
-import com.m3sv.plainupnp.di.DaggerAppComponent
-import com.m3sv.plainupnp.presentation.home.HomeComponent
-import com.m3sv.plainupnp.presentation.home.HomeComponentProvider
-import com.m3sv.plainupnp.presentation.settings.SettingsComponent
-import com.m3sv.plainupnp.presentation.settings.SettingsComponentProvider
-import com.m3sv.plainupnp.upnp.server.MediaServer
+import com.m3sv.plainupnp.interfaces.LifecycleManager
+import com.m3sv.plainupnp.presentation.main.MainActivity
+import com.m3sv.plainupnp.presentation.splash.SplashActivity
+import com.m3sv.plainupnp.server.ServerManager
+import com.m3sv.plainupnp.upnp.UpnpScopeProvider
+import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import timber.log.Timber
-import kotlin.concurrent.thread
+import java.util.concurrent.Executors
+import javax.inject.Inject
 
-class App : Application(),
-    HomeComponentProvider,
-    SettingsComponentProvider {
+@HiltAndroidApp
+class App : Application(), Router, UpnpScopeProvider {
 
-    val appComponent: AppComponent by lazy {
-        DaggerAppComponent
-            .factory()
-            .create(this)
-    }
+    @Inject
+    lateinit var lifecycleManager: LifecycleManager
 
-    override val homeComponent: HomeComponent
-        get() = appComponent.homeSubcomponent().create()
+    @Inject
+    lateinit var serverManager: ServerManager
 
-    override val settingsComponent: SettingsComponent
-        get() = appComponent.settingsSubcomponent().create()
+    override val upnpScope =
+        CoroutineScope(SupervisorJob() + Executors.newSingleThreadExecutor().asCoroutineDispatcher())
 
     override fun onCreate() {
         super.onCreate()
-        updateTheme()
-        generateUdn()
 
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
+
             StrictMode.setThreadPolicy(
                 StrictMode
                     .ThreadPolicy
                     .Builder()
                     .detectAll()
+                    .penaltyLog()
+                    .build()
+            )
+
+            StrictMode.setVmPolicy(
+                StrictMode
+                    .VmPolicy
+                    .Builder()
+                    .detectAll()
+                    .penaltyLog()
                     .build()
             )
         }
-
-        thread {
-            MediaServer(this@App).apply { start() }
-        }
     }
+
+    override fun getMainActivityIntent(context: Context): Intent = Intent(context, MainActivity::class.java)
+
+    override fun getSplashActivityIntent(context: Context): Intent = Intent(context, SplashActivity::class.java)
 }

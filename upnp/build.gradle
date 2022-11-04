@@ -1,0 +1,29 @@
+apply from: "${rootProject.projectDir}/scripts/kotlin-android-library.gradle"
+apply from: "${rootProject.projectDir}/scripts/flavors.gradle"
+apply plugin: 'kotlin-parcelize'
+apply plugin: 'kotlin-kapt'
+apply plugin: 'dagger.hilt.android.plugin'
+
+android {
+    with flavorConfig
+}
+
+dependencies {
+    compileOnly libs.javax.cdi
+
+    implementation libs.okHttp
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.documentfile)
+    implementation(libs.bundles.cling)
+    implementation(libs.bundles.coroutines)
+    implementation(libs.bundles.nanohttpd)
+    implementation(libs.hilt.android.core)
+    implementation(libs.timber)
+
+    kapt(libs.hilt.compiler)
+
+    testImplementation(libs.test.junit)
+    testImplementation(libs.test.mockito.core)
+
+    implementation project(":common")
+}
