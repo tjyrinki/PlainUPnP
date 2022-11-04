@@ -1,0 +1,16 @@
+apply from: "../scripts/android-library.gradle"
+
+dependencies {
+    implementation Dependencies.androidx.material
+    implementation Dependencies.androidx.preference
+
+    implementation Dependencies.dagger.core
+    compileOnly Dependencies.dagger.annotation
+    kapt Dependencies.dagger.compiler
+
+    implementation Dependencies.coroutines.core
+    compileOnly Dependencies.dagger.annotation
+
+    implementation project(':common')
+    implementation project(':shared-upnp')
+}

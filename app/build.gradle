@@ -1,0 +1,83 @@
+apply from: "../scripts/android-application.gradle"
+apply from: "../scripts/cling.gradle"
+apply plugin: 'kotlin-kapt'
+apply plugin: 'com.squareup.sqldelight'
+
+android {
+    packagingOptions {
+        exclude 'META-INF/beans.xml'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+
+        debug {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+        test.java.srcDirs += 'src/test/kotlin'
+        androidTest.java.srcDirs += 'src/androidTest/kotlin'
+    }
+
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+}
+
+dependencies {
+    implementation Dependencies.androidx.appCompat
+    implementation Dependencies.androidx.material
+    implementation Dependencies.androidx.recyclerView
+    implementation Dependencies.androidx.cardView
+    implementation Dependencies.androidx.constraintLayout
+    implementation Dependencies.androidx.preference
+    implementation Dependencies.androidx.lifecycle.extensions
+    implementation Dependencies.androidx.lifecycle.liveDataKtx
+    implementation Dependencies.androidx.lifecycle.viewModelKtx
+    implementation Dependencies.androidx.lifecycle.lifecycleKtx
+    implementation Dependencies.androidx.lifecycle.liveDataKtx
+
+    implementation Dependencies.androidx.navigation.fragment
+    implementation Dependencies.androidx.navigation.ui
+
+    implementation Dependencies.coroutines.core
+
+    implementation Dependencies.dagger.core
+    compileOnly Dependencies.dagger.annotation
+    kapt Dependencies.dagger.compiler
+
+    implementation Dependencies.kotlin
+    implementation Dependencies.timber
+
+    implementation Dependencies.glide
+
+    implementation Dependencies.nanohttpd.core
+    implementation Dependencies.nanohttpd.webserver
+
+    implementation Dependencies.sqlDelightAndroidDriver
+
+    testImplementation Dependencies.coroutines.test
+    testImplementation Dependencies.test.junit
+    testImplementation Dependencies.test.mockito
+    testImplementation Dependencies.androidx.coreTesting
+
+    implementation project(':common')
+    implementation project(':core-persistence')
+    implementation project(':feature-home')
+    implementation project(':feature-settings')
+    implementation project(':shared-resources')
+    implementation project(':shared-upnp')
+}
+
+detekt {
+    toolVersion = "1.0.0"
+    input = files("src/main/java")
+    filters = ".*/resources/.*,.*/build/.*"
+}

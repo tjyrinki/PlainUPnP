@@ -1,0 +1,35 @@
+apply from: '../scripts/base-android-library.gradle'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-kapt'
+
+android {
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+        test.java.srcDirs += 'src/test/kotlin'
+        androidTest.java.srcDirs += 'src/androidTest/kotlin'
+    }
+
+    // TODO investigate this
+    lintOptions {
+        warning 'InvalidPackage'
+    }
+
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+
+    compileOptions {
+        coreLibraryDesugaringEnabled true
+
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    viewBinding {
+        enabled = true
+    }
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:1.0.9'
+}
